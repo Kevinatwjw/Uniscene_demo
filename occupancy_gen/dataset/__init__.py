@@ -19,7 +19,11 @@ def get_dataloader(
     val_wrapper_config,
     train_loader,
     val_loader,
-    nusc=dict(version="v1.0-trainval", dataroot="data/nuscenes"),
+    
+    # nusc=dict(version="v1.0-trainval", dataroot="data/nuscenes"),
+    # [修改] 将默认版本改为 v1.0-mini
+    nusc=dict(version="v1.0-mini", dataroot="data/nuscenes"),
+    
     dist=False,
     iter_resume=False,
     train_sampler_config=dict(shuffle=True, drop_last=True),

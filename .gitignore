@@ -1,6 +1,16 @@
-build
-*.so
-*.egg-info
-*.pkl
-__pycache__
-occupancy_gen/gen_occ
+# 忽略大数据目录
+data/
+ckpt/
+*.pth
+*.pt
+*.npz
+*.npy
+*.tar
+*.gz
+*.bz2
+
+# 忽略系统文件
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/

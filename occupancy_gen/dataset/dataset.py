@@ -209,9 +209,18 @@ class nuScenesSceneDatasetLidar:
         self.data_path = data_path
         self.return_len = return_len
         self.offset = offset
-        self.nusc = nusc
+        # self.nusc = nusc
 
-        self.nusc = NuScenes(version="v1.0-trainval", dataroot=nusc_dataroot, verbose=True)
+        # self.nusc = NuScenes(version="v1.0-trainval", dataroot=nusc_dataroot, verbose=True)
+        # [修改] 优先使用传入的 nusc 对象（如果已初始化），否则强制使用 v1.0-mini 初始化
+        # 注意：如果传入的是字典配置（来自 __init__.py），这里最好忽略或重新初始化，
+        # 为了适配 Mini 数据集，最稳妥的方式是确保这里使用 v1.0-mini。
+        if nusc is not None and not isinstance(nusc, dict):
+            self.nusc = nusc
+        else:
+            self.nusc = NuScenes(version="v1.0-mini", dataroot=nusc_dataroot, verbose=True)
+            
+            
         self.maps = {}
         LOCATIONS = ["singapore-onenorth", "singapore-hollandvillage", "singapore-queenstown", "boston-seaport"]
         for location in LOCATIONS:

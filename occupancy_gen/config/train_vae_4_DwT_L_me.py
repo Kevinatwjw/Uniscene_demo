@@ -1,9 +1,12 @@
 grad_max_norm = 10
 print_freq = 10
-max_epochs = 300
-warmup_iters = 1000
+# max_epochs = 300
+max_epochs = 10
+# warmup_iters = 1000
+warmup_iters = 200
 return_len_ = 5
-
+# [新增]
+nusc_version = "v1.0-mini"
 multisteplr = True
 multisteplr_config = dict(
     decay_t=[1000, 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000, 110000],
@@ -31,7 +34,8 @@ train_dataset_config = dict(
     return_len=return_len_,
     offset=0,
     nusc_dataroot="data/nuscenes",
-    imageset="data/nuscenes_infos_train_temporal_v3_scene.pkl",
+    # imageset="data/nuscenes_infos_train_temporal_v3_scene.pkl",
+    imageset="data/nuscenes_mmdet3d-12Hz/nuscenes_infos_train_mini_dict.pkl", # [修改]
 )
 
 val_dataset_config = dict(
@@ -40,7 +44,8 @@ val_dataset_config = dict(
     return_len=return_len_,
     offset=0,
     nusc_dataroot="data/nuscenes",
-    imageset="data/nuscenes_infos_val_temporal_v3_scene.pkl",
+    # imageset="data/nuscenes_infos_val_temporal_v3_scene.pkl",
+    imageset="data/nuscenes_mmdet3d-12Hz/nuscenes_infos_val_mini_dict.pkl", # [修改]
 )
 
 train_wrapper_config = dict(

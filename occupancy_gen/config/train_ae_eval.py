@@ -1,8 +1,13 @@
 grad_max_norm = 35
 print_freq = 10
-max_epochs = 200
+# max_epochs = 200
+# [修改] 训练轮次
+max_epochs = 5
 warmup_iters = 1000
 return_len_ = 5
+
+# [新增]
+nusc_version = "v1.0-mini"
 
 multisteplr = False
 multisteplr_config = dict(
@@ -20,14 +25,15 @@ optimizer = dict(
 
 data_path = "data/nuscenes/"
 
-
+# [修改] 训练集配置
 train_dataset_config = dict(
     type="nuScenesSceneDatasetLidar_ori",
     data_path=data_path,
     return_len=return_len_,
     offset=0,
     nusc_dataroot="data/nuscenes",
-    imageset="data/nuscenes_infos_train_temporal_v3_scene.pkl",
+    # imageset="data/nuscenes_infos_train_temporal_v3_scene.pkl",
+    imageset="data/nuscenes_mmdet3d-12Hz/nuscenes_infos_train_mini_dict.pkl", # [修改]
 )
 
 val_dataset_config = dict(
@@ -36,7 +42,8 @@ val_dataset_config = dict(
     return_len=return_len_,
     offset=0,
     nusc_dataroot="data/nuscenes",
-    imageset="data/nuscenes_infos_val_temporal_v3_scene.pkl",
+    # imageset="data/nuscenes_infos_val_temporal_v3_scene.pkl",
+    imageset="data/nuscenes_mmdet3d-12Hz/nuscenes_infos_val_mini_dict.pkl", # [修改]
 )
 
 train_wrapper_config = dict(

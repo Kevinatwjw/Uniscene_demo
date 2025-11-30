@@ -3,7 +3,10 @@ import os
 import os.path as osp
 import time
 import warnings
-
+# ==========================================
+# [新增] 关键修改：导入模型包以触发注册机制
+import model_vae  
+# ==========================================
 import numpy as np
 import torch
 from mmengine import Config
@@ -86,26 +89,31 @@ def main(args):
     dataset = cfg.val_dataset_config["type"]
     recon_dir = os.path.join(recon_dir, dataset)
 
-    save_root = "./data/step2"
+    # save_root = "./data/step2"
+    # [修改] 将保存路径改为 args.work_dir，这样它就会保存到你命令行指定的 ./ckpt/VAE_Mini/ 下
+    # 从而与后续的 eval 脚本路径对应上
+    save_root = args.work_dir 
 
     with torch.no_grad():
+        
+        # =========== [修改] 注释掉 Train 部分，只跑 Val ===========
+        # save_path = f"{save_root}/train"
+        # bev_save_path = f"{save_path}/bevmap_4"
 
-        save_path = f"{save_root}/train"
-        bev_save_path = f"{save_path}/bevmap_4"
+        # for i_iter_val, (input_occs, target_occs, metas, bevmaps) in enumerate(tqdm(train_dataset_loader)):
 
-        for i_iter_val, (input_occs, target_occs, metas, bevmaps) in enumerate(tqdm(train_dataset_loader)):
+        #     os.makedirs(bev_save_path, exist_ok=True)
 
-            os.makedirs(bev_save_path, exist_ok=True)
+        #     scene_len = len(metas[0]["scene_token"])
+        #     bevmap = np.squeeze(bevmaps.cpu().numpy())
 
-            scene_len = len(metas[0]["scene_token"])
-            bevmap = np.squeeze(bevmaps.cpu().numpy())
-
-            # save code
-            for i in range(scene_len):
-                scene_token = metas[0]["scene_token"][i]
-                bev_save_filepath = os.path.join(bev_save_path, f"{scene_token}")
-                np.savez(bev_save_filepath, bevmap[i])
-
+        #     # save code
+        #     for i in range(scene_len):
+        #         scene_token = metas[0]["scene_token"][i]
+        #         bev_save_filepath = os.path.join(bev_save_path, f"{scene_token}")
+        #         np.savez(bev_save_filepath, bevmap[i])
+        # ========================================================
+        
         save_path = f"{save_root}/val"
         bev_save_path = f"{save_path}/bevmap_4"
 

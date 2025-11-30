@@ -154,10 +154,21 @@ def main(args):
 
     Dit_model = DDP(Dit_model.to(device), device_ids=[rank])
 
-    imageset = "./nuscenes/nuscenes_mmdet3d-12Hz/nuscenes_advanced_12Hz_infos_val.pkl"
-    occ_base_path = "./dense_voxels_with_semantic/"
-    bev_path = "./12hz_bevlayout_200_200"
-    gen_occ_save_path = "./gen_occ/200_infer12hz_occ3d"
+    # imageset = "./nuscenes/nuscenes_mmdet3d-12Hz/nuscenes_advanced_12Hz_infos_val.pkl"
+    # occ_base_path = "./dense_voxels_with_semantic/"
+    # bev_path = "./12hz_bevlayout_200_200"
+    # gen_occ_save_path = "./gen_occ/200_infer12hz_occ3d"
+    # --- 修改后 ---
+    # [修改] 指向 Mini Dict PKL
+    imageset = "data/nuscenes_mmdet3d-12Hz/nuscenes_infos_val_mini_dict.pkl"
+    # [修改] 指向 generate_occ.py 生成的 GT 路径
+    occ_base_path = "data/gts/dense_voxels_with_semantic/" 
+    # [修改] 指向 save_bevlayout_12hz.py 生成的路径
+    bev_path = "12hz_bevlayout_200_200" 
+    # [修改] 输出路径加个 mini 后缀以示区分
+    gen_occ_save_path = "./gen_occ/200_infer12hz_occ3d_mini"
+    
+    
     dataset = CustomDataset_Tframe_12hz(
         imageset, occ_base_path, bev_path, bev_ch_use, meta_num=4, Tframe=Tframe, use_clip=True, return_token=True
     )

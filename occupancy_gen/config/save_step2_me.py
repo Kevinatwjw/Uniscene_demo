@@ -1,6 +1,8 @@
+# 用于生成 BEV Layouts (步骤二) 的配置
 grad_max_norm = 35
 print_freq = 10
-max_epochs = 200
+# max_epochs = 200
+max_epochs = 10  # [修改] Mini 数据集跑几轮就够了，不用200轮
 warmup_iters = 200
 return_len_ = 10
 
@@ -18,25 +20,35 @@ optimizer = dict(
     ),
 )
 
+# [新增] 显式指定数据集版本,明确告诉 Dataset 类使用 v1.0-mini 表，防止 SDK 默认去读不存在的 trainval 表。
+nusc_version = "v1.0-mini"
+
 data_path = "data/nuscenes/"
 
-
+# [修改] 训练集数据配置
 train_dataset_config = dict(
     type="nuScenesSceneDatasetLidar",
     data_path=data_path,
     return_len=return_len_,
     offset=0,
-    nusc_dataroot=None,  #'data/nuscenes',
-    imageset="data/nuscenes_infos_train_temporal_v3_scene.pkl",
+    # nusc_dataroot=None,  #'data/nuscenes',
+    nusc_dataroot="data/nuscenes",  # [修改] 明确指向数据根目录
+    # imageset="data/nuscenes_infos_train_temporal_v3_scene.pkl",
+    # [修改] 指向的 Mini Dict PKL
+    imageset="data/nuscenes_mmdet3d-12Hz/nuscenes_infos_train_mini_dict.pkl", 
 )
 
+# [修改] 验证集数据配置
 val_dataset_config = dict(
     type="nuScenesSceneDatasetLidar",
     data_path=data_path,
     return_len=return_len_,
     offset=0,
-    nusc_dataroot=None,  #'data/nuscenes',
-    imageset="data/nuscenes_infos_val_temporal_v3_scene.pkl",
+    # nusc_dataroot=None,  #'data/nuscenes',
+    nusc_dataroot="data/nuscenes",  # [修改] 明确指向数据根目录
+    # imageset="data/nuscenes_infos_val_temporal_v3_scene.pkl",
+    # [修改] 指向你的 Mini Dict PKL
+    imageset="data/nuscenes_mmdet3d-12Hz/nuscenes_infos_val_mini_dict.pkl",
 )
 
 train_wrapper_config = dict(

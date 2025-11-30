@@ -4,7 +4,10 @@ from argparse import ArgumentParser
 from copy import deepcopy
 from os.path import join as smart_path_join
 
-import chamfer
+# import chamfer
+import chamferdist as chamfer
+from chamferdist.chamfer import knn_points
+
 import nksr
 import numpy as np
 import open3d as o3d
@@ -17,6 +20,30 @@ from nuscenes.utils.data_classes import LidarPointCloud
 from pyquaternion import Quaternion
 from scipy.spatial.transform import Rotation
 
+# === 添加这个适配函数 ===
+def custom_chamfer_forward(x, y):
+    """
+    使用 chamferdist 的 knn_points 实现双向 Chamfer 计算
+    x: [B, N, 3]
+    y: [B, M, 3]
+    Returns: d1, d2, idx1, idx2
+    """
+    # 1. 计算 x 到 y 的最近邻 (Forward)
+    # knn_points 返回的是 namedtuple(dists, idx, knn)
+    # dists 形状为 [B, N, K], 这里 K=1
+    out_xy = knn_points(x, y, K=1)
+    d1 = out_xy.dists[..., 0]  # 取第0个邻居的距离, 形状 [B, N]
+    idx1 = out_xy.idx[..., 0]  # 取第0个邻居的索引, 形状 [B, N]
+
+    # 2. 计算 y 到 x 的最近邻 (Backward)
+    out_yx = knn_points(y, x, K=1)
+    d2 = out_yx.dists[..., 0]  # [B, M]
+    idx2 = out_yx.idx[..., 0]  # [B, M]
+
+    # 这里的 indices 已经是 Long/Int 类型，无需转换
+    # chamferdist 默认返回的就是平方距离 (squared L2)，符合通常习惯
+    return d1, d2, idx1.int(), idx2.int()
+# ========================
 
 def nksr_mesh_normal(input_xyz, input_normal, detail_level=0.5, mise_iter=1, cpu_=False):
     device = torch.device("cuda:0")
@@ -491,7 +518,12 @@ def main(nusc, indice, nuscenesyaml, args, config):
 
         x = torch.from_numpy(dense_voxels).cuda().unsqueeze(0).float()
         y = torch.from_numpy(sparse_voxels_semantic[:, :3]).cuda().unsqueeze(0).float()
-        d1, d2, idx1, idx2 = chamfer.forward(x, y)
+        
+        # d1, d2, idx1, idx2 = chamfer.forward(x, y)
+        # === 修改：调用我们上面定义的适配函数 ===
+        d1, d2, idx1, idx2 = custom_chamfer_forward(x, y)
+        # ======================================
+        
         indices = idx1[0].cpu().numpy()
 
         dense_semantic = sparse_voxels_semantic[:, 3][np.array(indices)]
@@ -509,7 +541,19 @@ def main(nusc, indice, nuscenesyaml, args, config):
         if not os.path.exists(dirs):
             os.makedirs(dirs)
         # np.save(os.path.join(dirs, dict['pc_file_name'] + '.npy'), dense_voxels_with_semantic)
-        lidar_data_path = smart_path_join(dirs, dict["sample_token"], dict["lidar_token"] + ".npy")
+        # lidar_data_path = smart_path_join(dirs, dict["sample_token"], dict["lidar_token"] + ".npy")
+        # === 修改开始：构建完整目录并确保存在 ===
+        # 1. 构造该样本的具体保存文件夹路径
+        target_dir = smart_path_join(dirs, dict["sample_token"])
+        
+        # 2. 如果文件夹不存在，创建它 (包含父级目录)
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir, exist_ok=True)
+
+        # 3. 构造完整文件路径
+        lidar_data_path = smart_path_join(target_dir, dict["lidar_token"] + ".npy")
+        # === 修改结束 ===
+        
         with open(lidar_data_path, "wb") as f:
             pickle.dump(dense_voxels_with_semantic, f)
 
@@ -533,8 +577,10 @@ if __name__ == "__main__":
     parse.add_argument("--config_path", type=str, default="./data_process/config-800.yaml")
     parse.add_argument("--split", type=str, default="val")
     parse.add_argument("--save_path", type=str, default="./data/GT_occupancy/")
-    parse.add_argument("--dataroot", type=str, default="./data/nuScenes/")
-    parse.add_argument("--label_mapping", type=str, default="./data_process/nuscenes.yaml")
+    # parse.add_argument("--dataroot", type=str, default="./data/nuScenes/")
+    parse.add_argument("--dataroot", type=str, default="./data/nuscenes/")
+    # parse.add_argument("--label_mapping", type=str, default="./nuscenes.yaml")
+    parse.add_argument("--label_mapping", type=str, default="./nuscenes.yaml")
     parse.add_argument("--index_list", nargs="+", type=int)
     # <details>
     #   #### --config_path
@@ -552,10 +598,19 @@ if __name__ == "__main__":
 
     args = parse.parse_args()
 
-    if args.dataset == "nuscenes":
-        nusc = NuScenes(version="advanced_12Hz_trainval", dataroot=args.dataroot, verbose=True)
-        train_scenes = splits.train
-        val_scenes = splits.val
+    # if args.dataset == "nuscenes":
+    #     nusc = NuScenes(version="advanced_12Hz_trainval", dataroot=args.dataroot, verbose=True)
+    #     train_scenes = splits.train
+    #     val_scenes = splits.val
+    # --- 修改后 ---
+    if args.dataset == 'nuscenes':
+        # [修改] 版本改为 v1.0-mini
+        nusc = NuScenes(version='v1.0-mini', dataroot=args.dataroot, verbose=True)
+        
+        # [修改] Mini 数据集没有官方 split，直接读取所有场景
+        all_scenes = [s['name'] for s in nusc.scene]
+        train_scenes = all_scenes
+        val_scenes = all_scenes
     else:
         print("Dataset not supported")
 
