@@ -4,7 +4,8 @@ import pickle
 import numpy as np
 import torch
 from pyquaternion import Quaternion
-from read_occ_nksr import read_occ_oss
+# 修改后 (引入 load_occ_gt 以便直接调用)
+from read_occ_nksr import read_occ_oss, load_occ_gt
 from torch.utils.data import Dataset
 
 
@@ -67,6 +68,7 @@ class CustomDataset_Tframe_continuous(Dataset):
         training=False,
         return_token=False,
         return_ori_bev=False,
+        data_mode='standard',  # <--- [新增] 默认标准模式
     ):
         with open(imageset, "rb") as f:
             data = pickle.load(f)
@@ -81,6 +83,7 @@ class CustomDataset_Tframe_continuous(Dataset):
         self.Tframe = Tframe
         self.training = training
         self.return_token = return_token
+        self.data_mode = data_mode  # <--- [新增] 保存模式设置
         # with open("occ_token.pkl", 'rb') as f:
         #     self.token_dict=pickle.load(f)
 
@@ -108,11 +111,36 @@ class CustomDataset_Tframe_continuous(Dataset):
         for idx in idx_s:
             token = self.nusc_infos[scene_name][idx]["token"]
             tokens.append(token)
-            label_file = os.path.join(self.gts_path, f"{scene_name}/{token}/labels.npz")
-            label = np.load(label_file)
-            occ = label["semantics"]
-            occs.append(occ)
+            # === [修改开始] 根据 data_mode 决定路径 ===
+            # label_file = os.path.join(self.gts_path, f"{scene_name}/{token}/labels.npz")
+            # label = np.load(label_file)
+            # occ = label["semantics"]
+            # occs.append(occ)
 
+            if self.data_mode == '12hz':
+                # 模式 B: 12Hz 扁平结构
+                label_file = os.path.join(self.gts_path, "dense_voxels_with_semantic", token, "labels.npz")
+            else:
+                # 模式 A: Standard 分层结构 (默认)
+                label_file = os.path.join(self.gts_path, scene_name, token, "labels.npz")
+            
+            # 读取逻辑 (保持之前的容错性)
+            if os.path.exists(label_file):
+                try:
+                    label = np.load(label_file, allow_pickle=True)
+                    if hasattr(label, 'files') and 'semantics' in label.files:
+                        occ = label["semantics"]
+                    else:
+                        occ = label
+                except Exception as e:
+                    print(f"[Error] Corrupted file {label_file}: {e}")
+                    occ = np.zeros((200, 200, 16), dtype=np.uint8)
+            else:
+                # print(f"[Warn] Missing GT: {label_file}") # 可选打印
+                occ = np.zeros((200, 200, 16), dtype=np.uint8)
+            
+            occs.append(occ)
+            # === [修改结束] ===
             Bev_file = os.path.join(self.Bev_root, f"{token}.npz")
             Bev = np.load(Bev_file)
             Bev = Bev["arr_0"]
@@ -182,7 +210,7 @@ class CustomDataset_Tframe_continuous(Dataset):
 
 
 class CustomDataset_wm_continuous(Dataset):
-    def __init__(self, imageset, gts_path, folder_a, folder_b, bev_ch_use=None, meta_num=1, Tframe=6):
+    def __init__(self, imageset, gts_path, folder_a, folder_b, bev_ch_use=None, meta_num=1, Tframe=6, data_mode='standard'):# [新增 data_mode]
         with open(imageset, "rb") as f:
             data = pickle.load(f)
         self.nusc_infos = data["infos"]
@@ -195,6 +223,7 @@ class CustomDataset_wm_continuous(Dataset):
         self.ch_use = bev_ch_use
         self.meta_num = meta_num
         self.Tframe = Tframe
+        self.data_mode = data_mode # [新增]
         # with open("occ_token.pkl", 'rb') as f:
         #     self.token_dict=pickle.load(f)
 
@@ -221,9 +250,30 @@ class CustomDataset_wm_continuous(Dataset):
         for idx in idx_s:
             token = self.nusc_infos[scene_name][idx]["token"]
             tokens.append(token)
-            label_file = os.path.join(self.gts_path, f"{scene_name}/{token}/labels.npz")
-            label = np.load(label_file)
-            occ = label["semantics"]
+            
+            # label_file = os.path.join(self.gts_path, f"{scene_name}/{token}/labels.npz")
+            # [替换] 原来的 label_file = ... 逻辑，替换为下面的判断
+            if self.data_mode == '12hz':
+                label_file = os.path.join(self.gts_path, "dense_voxels_with_semantic", token, "labels.npz")
+            else:
+                label_file = os.path.join(self.gts_path, scene_name, token, "labels.npz")
+            
+            # label = np.load(label_file)
+            # occ = label["semantics"]
+            # occs.append(occ)
+            if os.path.exists(label_file):
+                try:
+                    label_data = np.load(label_file, allow_pickle=True)
+                    if hasattr(label_data, 'files') and 'semantics' in label_data.files:
+                        occ = label_data["semantics"]
+                    else:
+                        occ = label_data
+                except Exception as e:
+                    print(f"[Error] Corrupted file {label_file}: {e}")
+                    occ = np.zeros((200, 200, 16), dtype=np.uint8)
+            else:
+                occ = np.zeros((200, 200, 16), dtype=np.uint8)
+            
             occs.append(occ)
 
             # Zmid_file = os.path.join(self.Zmid_root, f"{token}.npz")
@@ -300,6 +350,7 @@ class CustomDataset_Tframe_12hz(Dataset):
         training=False,
         use_clip=False,
         return_token=False,
+        # data_mode='12hz', # <--- [新增] 默认 12hz，因为这是这个类的本职工作
     ):
         with open(imageset, "rb") as f:
             data = pickle.load(f)
@@ -314,6 +365,7 @@ class CustomDataset_Tframe_12hz(Dataset):
         self.Tframe = Tframe
         self.return_len = Tframe
         self.return_token = return_token
+        # self.data_mode = data_mode # <--- [新增]
         # self.training = training
         # with open("occ_token.pkl", 'rb') as f:
         #     self.token_dict=pickle.load(f)
@@ -435,6 +487,7 @@ class CustomDataset_Tframe_12hz(Dataset):
             # label = np.load(label_file)
             # occ = label['semantics']
             # occ = np.load(f"{self.occ_base_path}/{token}.npy")
+            print(f"Loading token: {token} from {self.occ_base_path}") # Debug用
             occ = read_occ_oss(token, self.occ_base_path, self.nusc_infos[frame])
             occ[occ == 0] = 17
             # print(occ.shape)

@@ -22,7 +22,10 @@ optimizer = dict(
 
 # [新增] 显式指定数据集版本,明确告诉 Dataset 类使用 v1.0-mini 表，防止 SDK 默认去读不存在的 trainval 表。
 nusc_version = "v1.0-mini"
-
+# [新增] 全局数据模式开关
+# 选项: 'standard' (官方/Benchmark 2Hz) | '12hz' (视频生成/大数据量)
+DATA_MODE = 'standard' 
+# DATA_MODE = '12hz'  # 想切 12Hz 时解开这行注释即可
 data_path = "data/nuscenes/"
 
 # [修改] 训练集数据配置
@@ -36,6 +39,8 @@ train_dataset_config = dict(
     # imageset="data/nuscenes_infos_train_temporal_v3_scene.pkl",
     # [修改] 指向的 Mini Dict PKL
     imageset="data/nuscenes_mmdet3d-12Hz/nuscenes_infos_train_mini_dict.pkl", 
+    # [新增] 传入开关
+    data_mode=DATA_MODE, 
 )
 
 # [修改] 验证集数据配置
@@ -49,6 +54,8 @@ val_dataset_config = dict(
     # imageset="data/nuscenes_infos_val_temporal_v3_scene.pkl",
     # [修改] 指向你的 Mini Dict PKL
     imageset="data/nuscenes_mmdet3d-12Hz/nuscenes_infos_val_mini_dict.pkl",
+    # [新增] 传入开关
+    data_mode=DATA_MODE, 
 )
 
 train_wrapper_config = dict(

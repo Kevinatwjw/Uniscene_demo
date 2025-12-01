@@ -25,6 +25,7 @@ class nuScenesSceneDatasetLidar_ori:
         test_mode=False,
         input_dataset="gts",
         output_dataset="gts",
+        data_mode='standard',  # <--- [新增] 默认标准模式
     ):
         with open(imageset, "rb") as f:
             data = pickle.load(f)
@@ -35,7 +36,13 @@ class nuScenesSceneDatasetLidar_ori:
         self.data_path = data_path
         self.return_len = return_len
         self.offset = offset
+        self.data_mode = data_mode  # <--- [新增] 保存模式设置
         # self.nusc = nusc
+            # [新增/修正] 补全 SDK 初始化逻辑，与另一个类保持一致
+        if nusc is not None and not isinstance(nusc, dict):
+            self.nusc = nusc
+        else:
+            self.nusc = NuScenes(version="v1.0-mini", dataroot=nusc_dataroot, verbose=True)
 
         self.times = times
         self.test_mode = test_mode
@@ -85,32 +92,32 @@ class nuScenesSceneDatasetLidar_ori:
         # # input_occs = np.stack(occs, dtype=np.int64)
         # input_occs = np.stack(occs).astype(np.int64)
         
-            # 定义候选路径列表 (优先级：自制Mini结构 -> 官方Occ3D结构)
-            candidate_paths = [
-                # 1. 自制结构: data/gts/dense_voxels_with_semantic/<token>/labels.npz
-                os.path.join(self.data_path, self.input_dataset, "dense_voxels_with_semantic", token, "labels.npz"),
-                # 2. 官方结构: data/gts/<scene_name>/<token>/labels.npz
-                os.path.join(self.data_path, self.input_dataset, scene_name, token, "labels.npz")
-            ]
-
-            label_file = None
-            for path in candidate_paths:
-                if os.path.exists(path):
-                    label_file = path
-                    break
+            # === [修改开始] 根据 data_mode 决定 Input 路径 ===
+            if self.data_mode == '12hz':
+                label_file = os.path.join(self.data_path, self.input_dataset, "dense_voxels_with_semantic", token, "labels.npz")
+            else:
+                label_file = os.path.join(self.data_path, self.input_dataset, scene_name, token, "labels.npz")
+            # =================================================
             
-            try:
-                if label_file:
-                    # allow_pickle=True 是必须的
-                    label = np.load(label_file, allow_pickle=True)
-                    occ = label["semantics"]
-                else:
-                    raise FileNotFoundError
-            except Exception:
-                # 容错：如果找不到或读取失败，返回全0空网格
-                # print(f"[Warn] Input GT Missing for token {token}")
+            if os.path.exists(label_file):
+                try:
+                    # 1. 加载文件
+                    label_data = np.load(label_file, allow_pickle=True)
+                    
+                    # 2. 判断格式 (.npz 字典 vs .npy 数组)
+                    if hasattr(label_data, 'files') and 'semantics' in label_data.files:
+                        occ = label_data["semantics"]
+                    else:
+                        occ = label_data # 兼容旧版 npy
+                except Exception as e:
+                    # 捕获文件损坏等读取错误
+                    print(f"[Error] Corrupted file {label_file}: {e}")
+                    occ = np.zeros((200, 200, 16), dtype=np.uint8)
+            else:
+                # 文件根本不存在
+                # print(f"[Warn] Missing GT: {label_file}") 
                 occ = np.zeros((200, 200, 16), dtype=np.uint8)
-
+            
             occs.append(occ)
         
         input_occs = np.stack(occs).astype(np.int64)
@@ -131,29 +138,32 @@ class nuScenesSceneDatasetLidar_ori:
         #     occs.append(occ)
         # # output_occs = np.stack(occs, dtype=np.int64)
         # output_occs = np.stack(occs).astype(np.int64)
-                    # 定义候选路径列表 (注意换成 self.output_dataset)
-            candidate_paths = [
-                # 自制: data/gts/dense_voxels_with_semantic/<token>/labels.npz
-                os.path.join(self.data_path, self.output_dataset, "dense_voxels_with_semantic", token, "labels.npz"),
-                # 官方: data/gts/<scene_name>/<token>/labels.npz
-                os.path.join(self.data_path, self.output_dataset, scene_name, token, "labels.npz")
-            ]
-
-            label_file = None
-            for path in candidate_paths:
-                if os.path.exists(path):
-                    label_file = path
-                    break
+            # === [修改开始] 根据 data_mode 决定 Output 路径 ===
+            if self.data_mode == '12hz':
+                label_file = os.path.join(self.data_path, self.output_dataset, "dense_voxels_with_semantic", token, "labels.npz")
+            else:
+                label_file = os.path.join(self.data_path, self.output_dataset, scene_name, token, "labels.npz")
+            # =================================================
             
-            try:
-                if label_file:
-                    label = np.load(label_file, allow_pickle=True)
-                    occ = label["semantics"]
-                else:
-                    raise FileNotFoundError
-            except Exception:
+            if os.path.exists(label_file):
+                try:
+                    # 1. 加载文件
+                    label_data = np.load(label_file, allow_pickle=True)
+                    
+                    # 2. 判断格式 (.npz 字典 vs .npy 数组)
+                    if hasattr(label_data, 'files') and 'semantics' in label_data.files:
+                        occ = label_data["semantics"]
+                    else:
+                        occ = label_data # 兼容旧版 npy
+                except Exception as e:
+                    # 捕获文件损坏等读取错误
+                    print(f"[Error] Corrupted file {label_file}: {e}")
+                    occ = np.zeros((200, 200, 16), dtype=np.uint8)
+            else:
+                # 文件根本不存在
+                # print(f"[Warn] Missing GT: {label_file}") 
                 occ = np.zeros((200, 200, 16), dtype=np.uint8)
-
+            
             occs.append(occ)
             
         output_occs = np.stack(occs).astype(np.int64)
@@ -266,6 +276,7 @@ class nuScenesSceneDatasetLidar:
         test_mode=False,
         input_dataset="gts",
         output_dataset="gts",
+        data_mode='standard', # <--- [新增]
     ):
         with open(imageset, "rb") as f:
             data = pickle.load(f)
@@ -277,7 +288,7 @@ class nuScenesSceneDatasetLidar:
         self.return_len = return_len
         self.offset = offset
         # self.nusc = nusc
-
+        self.data_mode = data_mode # <--- [新增]
         # self.nusc = NuScenes(version="v1.0-trainval", dataroot=nusc_dataroot, verbose=True)
         # [修改] 优先使用传入的 nusc 对象（如果已初始化），否则强制使用 v1.0-mini 初始化
         # 注意：如果传入的是字典配置（来自 __init__.py），这里最好忽略或重新初始化，
@@ -366,29 +377,32 @@ class nuScenesSceneDatasetLidar:
         #     occs.append(occ)
         # # input_occs = np.stack(occs, dtype=np.int64)
         # input_occs = np.stack(occs).astype(np.int64)
-            # 定义候选路径列表
-            candidate_paths = [
-                # 1. 自制结构
-                os.path.join(self.data_path, self.input_dataset, "dense_voxels_with_semantic", token, "labels.npz"),
-                # 2. 官方结构
-                os.path.join(self.data_path, self.input_dataset, scene_name, token, "labels.npz")
-            ]
-
-            label_file = None
-            for path in candidate_paths:
-                if os.path.exists(path):
-                    label_file = path
-                    break
+            # === [修改开始] 根据 data_mode 决定 Input 路径 ===
+            if self.data_mode == '12hz':
+                label_file = os.path.join(self.data_path, self.input_dataset, "dense_voxels_with_semantic", token, "labels.npz")
+            else:
+                label_file = os.path.join(self.data_path, self.input_dataset, scene_name, token, "labels.npz")
+            # =================================================
             
-            try:
-                if label_file:
-                    label = np.load(label_file, allow_pickle=True)
-                    occ = label["semantics"]
-                else:
-                    raise FileNotFoundError
-            except Exception:
+            if os.path.exists(label_file):
+                try:
+                    # 1. 加载文件
+                    label_data = np.load(label_file, allow_pickle=True)
+                    
+                    # 2. 判断格式 (.npz 字典 vs .npy 数组)
+                    if hasattr(label_data, 'files') and 'semantics' in label_data.files:
+                        occ = label_data["semantics"]
+                    else:
+                        occ = label_data # 兼容旧版 npy
+                except Exception as e:
+                    # 捕获文件损坏等读取错误
+                    print(f"[Error] Corrupted file {label_file}: {e}")
+                    occ = np.zeros((200, 200, 16), dtype=np.uint8)
+            else:
+                # 文件根本不存在
+                # print(f"[Warn] Missing GT: {label_file}") 
                 occ = np.zeros((200, 200, 16), dtype=np.uint8)
-
+            
             occs.append(occ)
             
         input_occs = np.stack(occs).astype(np.int64)        
@@ -404,27 +418,32 @@ class nuScenesSceneDatasetLidar:
         #     occs.append(occ)
         # # output_occs = np.stack(occs, dtype=np.int64)
         # output_occs = np.stack(occs).astype(np.int64)
-            # 定义候选路径列表 (注意换成 self.output_dataset)
-            candidate_paths = [
-                os.path.join(self.data_path, self.output_dataset, "dense_voxels_with_semantic", token, "labels.npz"),
-                os.path.join(self.data_path, self.output_dataset, scene_name, token, "labels.npz")
-            ]
-
-            label_file = None
-            for path in candidate_paths:
-                if os.path.exists(path):
-                    label_file = path
-                    break
+            # === [修改开始] 根据 data_mode 决定 Output 路径 ===
+            if self.data_mode == '12hz':
+                label_file = os.path.join(self.data_path, self.output_dataset, "dense_voxels_with_semantic", token, "labels.npz")
+            else:
+                label_file = os.path.join(self.data_path, self.output_dataset, scene_name, token, "labels.npz")
+            # =================================================
             
-            try:
-                if label_file:
-                    label = np.load(label_file, allow_pickle=True)
-                    occ = label["semantics"]
-                else:
-                    raise FileNotFoundError
-            except Exception:
+            if os.path.exists(label_file):
+                try:
+                    # 1. 加载文件
+                    label_data = np.load(label_file, allow_pickle=True)
+                    
+                    # 2. 判断格式 (.npz 字典 vs .npy 数组)
+                    if hasattr(label_data, 'files') and 'semantics' in label_data.files:
+                        occ = label_data["semantics"]
+                    else:
+                        occ = label_data # 兼容旧版 npy
+                except Exception as e:
+                    # 捕获文件损坏等读取错误
+                    print(f"[Error] Corrupted file {label_file}: {e}")
+                    occ = np.zeros((200, 200, 16), dtype=np.uint8)
+            else:
+                # 文件根本不存在
+                # print(f"[Warn] Missing GT: {label_file}") 
                 occ = np.zeros((200, 200, 16), dtype=np.uint8)
-
+            
             occs.append(occ)
             
         output_occs = np.stack(occs).astype(np.int64)

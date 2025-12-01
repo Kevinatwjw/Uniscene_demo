@@ -11,6 +11,8 @@ from pyquaternion import Quaternion
 
 def get_grid_coords(dims, resolution):
     """
+    把体素网格的整数索引 (0~199, 0~199, 0~15) 转换成世界坐标中的体素中心点真实坐标
+    例如：dims=[200,200,16], resolution=0.4 → 每个体素 0.4m×0.4m×0.4m
     :param dims: the dimensions of the grid [x, y, z] (i.e. [256, 256, 32])
     :return coords_grid: is the center coords of voxels in the grid
     """
@@ -43,9 +45,14 @@ def draw_return(
     cam_positions=None,
     focal_positions=None,
     timestamp=None,
-    mode=0,
+    mode=0,        # 0=直接画 occupancy；1=画 LiDARSeg 预测；2=画 GT 点云标签
     sem=False,
 ):
+    """
+    用于 Open3D 可视化的辅助函数：
+    把 occupancy 网格 → 点云（每个有物的体素取中心点）→ 按类别上色
+    最后返回点云坐标 + RGBA 颜色，方便后面 open3d.geometry.PointCloud() 使用
+    """
     w, h, z = voxels.shape
 
     # Compute the voxels coordinates
@@ -124,6 +131,20 @@ def draw_return(
 def replace_occ_grid_with_bev(
     input_occ, bevlayout, driva_area_idx=11, bev_replace_idx=[1, 5, 6], occ_replace_new_idx=[18, 20, 21]
 ):
+    """
+    把 BEV Map（矢量语义（ped_crossing、road_divider、lane_divider）
+    强行写回 3D occupancy 网格的 drivable_surface (11) 那一层，
+    用来生成更精细的“分层”标签（OpenOccupancy 标准做法）
+
+    输入
+    ----
+    input_occ     : (200,200,16) uint8，原始 occupancy
+    bevlayout     : (18,200,200) uint8，BEV 矢量地图（来自 nuScenes map）
+
+    输出
+    ----
+    output_occ    : 同 shape，被替换后的新 occupancy
+    """
     # self.classes= ['drivable_area','ped_crossing','walkway','stop_line','carpark_area','road_divider','lane_divider','road_block']
     # occ road [11] drivable area
      
@@ -166,6 +187,7 @@ def voxel2world(
     voxel, voxel_size=np.array([0.125, 0.125, 0.125]), pc_range=np.array([-50.0, -50.0, -5.0, 50.0, 50.0, 3.0])
 ):
     """
+    体素索引 → 世界坐标（体素中心）
     voxel: [N, 3]
     """
     return voxel * voxel_size[None, :] + pc_range[:3][None, :]
@@ -175,16 +197,50 @@ def world2voxel(
     wolrd, voxel_size=np.array([0.125, 0.125, 0.125]), pc_range=np.array([-50.0, -50.0, -5.0, 50.0, 50.0, 3.0])
 ):
     """
+    世界坐标 → 体素索引（浮点，后面需要取 floor 或 round）
     wolrd: [N, 3]
     """
     return (wolrd - pc_range[:3][None, :]) / voxel_size[None, :]
 
 
 def load_occ_gt(occ_path, grid_size, item, unoccupied=0):
+    """
+    读取你自己生成的 .npz/.npy 形式的 occupancy GT（体素级）
+    并转换成 (200,200,16) 的 uint8 网格，兼容 OpenOccupancy 评估
+
+    参数
+    ----
+    occ_path : .npz 文件路径（里面存的是稀疏体素 [x,y,z,cls]）
+    grid_size: [200,200,16]
+    item     : nuScenes sample 数据（包含 lidar2ego 外参）
+    unoccupied: 空体素填 0（默认）
+
+    返回
+    ----
+    processed_label: (200,200,16) uint8，值 0=empty, 1~16=官方类, 17=unknown（会被转成0）
+    """
     #############################
     #  occ data
     #  [z y x cls] or [z y x vx vy vz cls]
-    pcd = np.load(open(occ_path, "rb"), encoding="bytes", allow_pickle=True)
+    # ----------------修改：兼容 .npz (字典) 和 .npy (数组) 读取--------------------------
+    # pcd = np.load(open(occ_path, "rb"), encoding="bytes", allow_pickle=True)
+    
+    try:
+        # allow_pickle=True 是必须的
+        raw_data = np.load(occ_path, allow_pickle=True)
+        
+        # 判断是否为 npz 压缩包 (包含 files 属性) 且包含 semantics 键
+        if hasattr(raw_data, 'files') and 'semantics' in raw_data.files:
+            pcd = raw_data['semantics']  # 解包取出数据
+        else:
+            pcd = raw_data  # 兼容旧逻辑，直接是数组
+            
+    except Exception as e:
+        print(f"[Error] Failed to load {occ_path}: {e}")
+        # 读取失败返回全0空网格，防止程序崩溃
+        return np.zeros(grid_size, dtype=np.uint8)
+    # ----------------修改：兼容 .npz (字典) 和 .npy (数组) 读取--------------------------
+    
     pcd_label = pcd[..., -1:]
     pcd_label[pcd_label == 0] = 255
     pcd_np_cor = voxel2world(pcd[..., [0, 1, 2]] + 0.5)  # x y z
@@ -250,6 +306,10 @@ def load_occ_gt(occ_path, grid_size, item, unoccupied=0):
 # u1: uint8, u8: uint16, i8: int64
 @nb.jit("u1[:,:,:](u1[:,:,:],i8[:,:])", nopython=True, cache=True, parallel=False)
 def nb_process_label(processed_label, sorted_label_voxel_pair):
+    """
+    Numba 加速版：对同一个体素内可能出现多个类的情况，做“投票”取最多的类
+    这是整个 pipeline 里最慢的一步，用 numba 能快 50~100 倍
+    """
     label_size = 256
     counter = np.zeros((label_size,), dtype=np.uint16)
     counter[sorted_label_voxel_pair[0, 3]] = 1
@@ -267,6 +327,7 @@ def nb_process_label(processed_label, sorted_label_voxel_pair):
 
 
 def load_occ_layout(layout_path):
+    """读取 nuScenes 的 BEV 矢量地图（.npz）"""
     # load layout data
     layout = np.load(open(layout_path, "rb"), encoding="bytes", allow_pickle=True)
     layout = layout["bev_map"]
@@ -274,7 +335,36 @@ def load_occ_layout(layout_path):
 
 
 def read_occ_oss(sample_token, occ_base_path, sample_item):
-    lidar_token = os.listdir(smart_path_join(occ_base_path, sample_token))[0][:-4]
-    occ_path = os.path.join(occ_base_path, sample_token, lidar_token + ".npy")
+    """
+    兼容你自己存的目录结构：
+    occ_base_path/
+        {sample_token}/
+            {lidar_token}.npy
+    """
+     # === [修改开始] 智能路径查找逻辑 ===
+    # lidar_token = os.listdir(smart_path_join(occ_base_path, sample_token))[0][:-4]
+    # occ_path = os.path.join(occ_base_path, sample_token, lidar_token + ".npy")
+
+    target_dir = smart_path_join(occ_base_path, sample_token)
+    
+    # 1. 优先尝试标准名 labels.npz (这是我们 generate_occ.py 生成的新标准)
+    std_path = os.path.join(target_dir, "labels.npz")
+    
+    if os.path.exists(std_path):
+        occ_path = std_path
+    else:
+        # 2. 回退逻辑：尝试寻找旧版 .npy (如果有的话)
+        # 原逻辑：假设文件夹下有一个 .npy 文件，取第一个
+        if os.path.exists(target_dir):
+            files = [f for f in os.listdir(target_dir) if f.endswith('.npy')]
+            if len(files) > 0:
+                occ_path = os.path.join(target_dir, files[0])
+            else:
+                # 目录存在但没文件，返回全0
+                return np.zeros((200, 200, 16), dtype=np.uint8)
+        else:
+            # 目录不存在，返回全0
+            return np.zeros((200, 200, 16), dtype=np.uint8)
+     # === [修改结束] ===
     occ = load_occ_gt(occ_path=occ_path, grid_size=np.array([200, 200, 16]), item=sample_item)
     return occ
