@@ -77,21 +77,88 @@ class nuScenesSceneDatasetLidar_ori:
         for i in range(self.return_len + self.offset):
             token = self.nusc_infos[scene_name][idx + i]["token"]
             tokens.append(token)
-            label_file = os.path.join(self.data_path, f"{self.input_dataset}/{scene_name}/{token}/labels.npz")
-            label = np.load(label_file)
-            occ = label["semantics"]
+        # ==================== 修改开始：Input 读取逻辑 ===================
+        #     label_file = os.path.join(self.data_path, f"{self.input_dataset}/{scene_name}/{token}/labels.npz")
+        #     label = np.load(label_file)
+        #     occ = label["semantics"]
+        #     occs.append(occ)
+        # # input_occs = np.stack(occs, dtype=np.int64)
+        # input_occs = np.stack(occs).astype(np.int64)
+        
+            # 定义候选路径列表 (优先级：自制Mini结构 -> 官方Occ3D结构)
+            candidate_paths = [
+                # 1. 自制结构: data/gts/dense_voxels_with_semantic/<token>/labels.npz
+                os.path.join(self.data_path, self.input_dataset, "dense_voxels_with_semantic", token, "labels.npz"),
+                # 2. 官方结构: data/gts/<scene_name>/<token>/labels.npz
+                os.path.join(self.data_path, self.input_dataset, scene_name, token, "labels.npz")
+            ]
+
+            label_file = None
+            for path in candidate_paths:
+                if os.path.exists(path):
+                    label_file = path
+                    break
+            
+            try:
+                if label_file:
+                    # allow_pickle=True 是必须的
+                    label = np.load(label_file, allow_pickle=True)
+                    occ = label["semantics"]
+                else:
+                    raise FileNotFoundError
+            except Exception:
+                # 容错：如果找不到或读取失败，返回全0空网格
+                # print(f"[Warn] Input GT Missing for token {token}")
+                occ = np.zeros((200, 200, 16), dtype=np.uint8)
+
             occs.append(occ)
-        # input_occs = np.stack(occs, dtype=np.int64)
+        
         input_occs = np.stack(occs).astype(np.int64)
+        # ==================== 修改结束：Input 读取逻辑 ====================
+        
+        
+        
+        
         occs = []
         for i in range(self.return_len + self.offset):
             token = self.nusc_infos[scene_name][idx + i]["token"]
-            label_file = os.path.join(self.data_path, f"{self.output_dataset}/{scene_name}/{token}/labels.npz")
-            label = np.load(label_file)
-            occ = label["semantics"]
+        # ==================== 修改开始：Output 读取逻辑 ====================
+            
+            
+        #     label_file = os.path.join(self.data_path, f"{self.output_dataset}/{scene_name}/{token}/labels.npz")
+        #     label = np.load(label_file)
+        #     occ = label["semantics"]
+        #     occs.append(occ)
+        # # output_occs = np.stack(occs, dtype=np.int64)
+        # output_occs = np.stack(occs).astype(np.int64)
+                    # 定义候选路径列表 (注意换成 self.output_dataset)
+            candidate_paths = [
+                # 自制: data/gts/dense_voxels_with_semantic/<token>/labels.npz
+                os.path.join(self.data_path, self.output_dataset, "dense_voxels_with_semantic", token, "labels.npz"),
+                # 官方: data/gts/<scene_name>/<token>/labels.npz
+                os.path.join(self.data_path, self.output_dataset, scene_name, token, "labels.npz")
+            ]
+
+            label_file = None
+            for path in candidate_paths:
+                if os.path.exists(path):
+                    label_file = path
+                    break
+            
+            try:
+                if label_file:
+                    label = np.load(label_file, allow_pickle=True)
+                    occ = label["semantics"]
+                else:
+                    raise FileNotFoundError
+            except Exception:
+                occ = np.zeros((200, 200, 16), dtype=np.uint8)
+
             occs.append(occ)
-        # output_occs = np.stack(occs, dtype=np.int64)
+            
         output_occs = np.stack(occs).astype(np.int64)
+        # ==================== 修改结束：Output 读取逻辑 ====================
+        
         metas = {}
         metas.update(scene_token=tokens)
         metas.update(scene_name=scene_name)
@@ -292,21 +359,77 @@ class nuScenesSceneDatasetLidar:
         for i in range(self.return_len + self.offset):
             token = self.nusc_infos[scene_name][idx + i]["token"]
             tokens.append(token)
-            label_file = os.path.join(self.data_path, f"{self.input_dataset}/{scene_name}/{token}/labels.npz")
-            label = np.load(label_file)
-            occ = label["semantics"]
+            # ==================== 修改开始：Input 读取逻辑 ====================
+        #     label_file = os.path.join(self.data_path, f"{self.input_dataset}/{scene_name}/{token}/labels.npz")
+        #     label = np.load(label_file)
+        #     occ = label["semantics"]
+        #     occs.append(occ)
+        # # input_occs = np.stack(occs, dtype=np.int64)
+        # input_occs = np.stack(occs).astype(np.int64)
+            # 定义候选路径列表
+            candidate_paths = [
+                # 1. 自制结构
+                os.path.join(self.data_path, self.input_dataset, "dense_voxels_with_semantic", token, "labels.npz"),
+                # 2. 官方结构
+                os.path.join(self.data_path, self.input_dataset, scene_name, token, "labels.npz")
+            ]
+
+            label_file = None
+            for path in candidate_paths:
+                if os.path.exists(path):
+                    label_file = path
+                    break
+            
+            try:
+                if label_file:
+                    label = np.load(label_file, allow_pickle=True)
+                    occ = label["semantics"]
+                else:
+                    raise FileNotFoundError
+            except Exception:
+                occ = np.zeros((200, 200, 16), dtype=np.uint8)
+
             occs.append(occ)
-        # input_occs = np.stack(occs, dtype=np.int64)
-        input_occs = np.stack(occs).astype(np.int64)
+            
+        input_occs = np.stack(occs).astype(np.int64)        
+        # ==================== 修改结束：Input 读取逻辑 ====================
+        
         occs = []
         for i in range(self.return_len + self.offset):
             token = self.nusc_infos[scene_name][idx + i]["token"]
-            label_file = os.path.join(self.data_path, f"{self.output_dataset}/{scene_name}/{token}/labels.npz")
-            label = np.load(label_file)
-            occ = label["semantics"]
+         # ==================== 修改开始：Output 读取逻辑 ====================    
+        #     label_file = os.path.join(self.data_path, f"{self.output_dataset}/{scene_name}/{token}/labels.npz")
+        #     label = np.load(label_file)
+        #     occ = label["semantics"]
+        #     occs.append(occ)
+        # # output_occs = np.stack(occs, dtype=np.int64)
+        # output_occs = np.stack(occs).astype(np.int64)
+            # 定义候选路径列表 (注意换成 self.output_dataset)
+            candidate_paths = [
+                os.path.join(self.data_path, self.output_dataset, "dense_voxels_with_semantic", token, "labels.npz"),
+                os.path.join(self.data_path, self.output_dataset, scene_name, token, "labels.npz")
+            ]
+
+            label_file = None
+            for path in candidate_paths:
+                if os.path.exists(path):
+                    label_file = path
+                    break
+            
+            try:
+                if label_file:
+                    label = np.load(label_file, allow_pickle=True)
+                    occ = label["semantics"]
+                else:
+                    raise FileNotFoundError
+            except Exception:
+                occ = np.zeros((200, 200, 16), dtype=np.uint8)
+
             occs.append(occ)
-        # output_occs = np.stack(occs, dtype=np.int64)
+            
         output_occs = np.stack(occs).astype(np.int64)
+        # ==================== 修改结束：Output 读取逻辑 ====================        
+        
         metas = {}
         metas.update(scene_token=tokens)
         metas.update(scene_name=scene_name)

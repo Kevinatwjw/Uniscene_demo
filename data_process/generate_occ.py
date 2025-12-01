@@ -178,9 +178,12 @@ def main(nusc, indice, nuscenesyaml, args, config):
     voxel_size = config["voxel_size"]
     pc_range = config["pc_range"]
     occ_size = config["occ_size"]
-
+    # ----------修改1-------------
     my_scene = nusc.scene[indice]
+    scene_name = my_scene['name'] # [关键新增] 获取场景名
     sensor = "LIDAR_TOP"
+    # ----------修改1-------------
+    
 
     # if args.split == 'train':
     #     if my_scene['token'] in val_list:
@@ -534,35 +537,62 @@ def main(nusc, indice, nuscenesyaml, args, config):
         pcd_np[:, 0] = (pcd_np[:, 0] - pc_range[0]) / voxel_size
         pcd_np[:, 1] = (pcd_np[:, 1] - pc_range[1]) / voxel_size
         pcd_np[:, 2] = (pcd_np[:, 2] - pc_range[2]) / voxel_size
-        dense_voxels_with_semantic = np.floor(pcd_np).astype(np.int32)
+        # -------------修改2-------------
+        # dense_voxels_with_semantic = np.floor(pcd_np).astype(np.int32)
+        # -------------修改2-------------
 
-        # dirs = os.path.join(save_path, 'dense_voxels_with_semantic/')
-        dirs = smart_path_join(save_path, "dense_voxels_with_semantic/")
-        if not os.path.exists(dirs):
-            os.makedirs(dirs)
-        # np.save(os.path.join(dirs, dict['pc_file_name'] + '.npy'), dense_voxels_with_semantic)
-        # lidar_data_path = smart_path_join(dirs, dict["sample_token"], dict["lidar_token"] + ".npy")
-        # === 修改开始：构建完整目录并确保存在 ===
-        # 1. 构造该样本的具体保存文件夹路径
-        target_dir = smart_path_join(dirs, dict["sample_token"])
+        # ================== [核心修改：保存逻辑] ==================
+        # # dirs = os.path.join(save_path, 'dense_voxels_with_semantic/')
+        # dirs = smart_path_join(save_path, "dense_voxels_with_semantic/")
+        # if not os.path.exists(dirs):
+        #     os.makedirs(dirs)
+        # # np.save(os.path.join(dirs, dict['pc_file_name'] + '.npy'), dense_voxels_with_semantic)
+        # # lidar_data_path = smart_path_join(dirs, dict["sample_token"], dict["lidar_token"] + ".npy")
+        # # === 修改开始：构建完整目录并确保存在 ===
+        # # 1. 构造该样本的具体保存文件夹路径
+        # target_dir = smart_path_join(dirs, dict["sample_token"])
         
-        # 2. 如果文件夹不存在，创建它 (包含父级目录)
-        if not os.path.exists(target_dir):
+        # # 2. 如果文件夹不存在，创建它 (包含父级目录)
+        # if not os.path.exists(target_dir):
+        #     os.makedirs(target_dir, exist_ok=True)
+
+        # # 3. 构造完整文件路径
+        # lidar_data_path = smart_path_join(target_dir, dict["lidar_token"] + ".npy")
+        # # === 修改结束 ===
+        
+        # with open(lidar_data_path, "wb") as f:
+        #     pickle.dump(dense_voxels_with_semantic, f)
+
+        # i = i + 1
+
+        # torch.cuda.empty_cache()
+
+        # continue
+        # [修改后] 支持双模式保存为 .npz
+        token = dict["lidar_token"]
+        sample_token = dict["sample_token"]
+        
+        # 模式 1: Standard (适配 dataset.py, 类似 Occ3D 官方结构)
+        # 路径: save_path/scene_name/sample_token/labels.npz
+        if args.save_mode == 'standard':
+            if dict["is_key_frame"]: # 标准模式通常只存关键帧
+                target_dir = smart_path_join(save_path, scene_name, sample_token)
+                os.makedirs(target_dir, exist_ok=True)
+                save_file = smart_path_join(target_dir, "labels.npz")
+                np.savez_compressed(save_file, semantics=dense_voxels_with_semantic)
+
+        # 模式 2: 12Hz (适配视频生成插值，扁平结构)
+        # 路径: save_path/dense_voxels_with_semantic/sample_token/labels.npz
+        # 注意：这里我们把文件名也改为 labels.npz 以保持格式统一，但在 read_occ_nksr.py 里要做适配
+        elif args.save_mode == '12hz':
+            target_dir = smart_path_join(save_path, "dense_voxels_with_semantic", sample_token)
             os.makedirs(target_dir, exist_ok=True)
-
-        # 3. 构造完整文件路径
-        lidar_data_path = smart_path_join(target_dir, dict["lidar_token"] + ".npy")
-        # === 修改结束 ===
-        
-        with open(lidar_data_path, "wb") as f:
-            pickle.dump(dense_voxels_with_semantic, f)
+            save_file = smart_path_join(target_dir, "labels.npz") 
+            np.savez_compressed(save_file, semantics=dense_voxels_with_semantic)
 
         i = i + 1
-
         torch.cuda.empty_cache()
-
         continue
-
 
 def save_ply(points, name):
     point_cloud_original = o3d.geometry.PointCloud()
@@ -576,7 +606,9 @@ if __name__ == "__main__":
     parse.add_argument("--dataset", type=str, default="nuscenes")
     parse.add_argument("--config_path", type=str, default="./data_process/config-800.yaml")
     parse.add_argument("--split", type=str, default="val")
-    parse.add_argument("--save_path", type=str, default="./data/GT_occupancy/")
+    # ---------------修改3---------------
+    parse.add_argument("--save_path", type=str, default="./data/gts/")
+    # ---------------修改3---------------
     # parse.add_argument("--dataroot", type=str, default="./data/nuScenes/")
     parse.add_argument("--dataroot", type=str, default="./data/nuscenes/")
     # parse.add_argument("--label_mapping", type=str, default="./nuscenes.yaml")
@@ -595,7 +627,12 @@ if __name__ == "__main__":
     #   Path to the label mapping file.
     #   #### --index_list
     #   List of indices to generate the occupancy data.
-
+    # ==================== [新增代码开始] ====================
+    # 添加 save_mode 参数，控制是生成标准分层结构(standard)还是扁平结构(12hz)
+    parse.add_argument("--save_mode", type=str, default="standard", 
+                       choices=["standard", "12hz"], 
+                       help="standard: for dataset.py training; 12hz: for video generation")
+    # ==================== [新增代码结束] ====================
     args = parse.parse_args()
 
     # if args.dataset == "nuscenes":
@@ -605,10 +642,13 @@ if __name__ == "__main__":
     # --- 修改后 ---
     if args.dataset == 'nuscenes':
         # [修改] 版本改为 v1.0-mini
+        print(f"Initializing NuScenes (v1.0-mini) from {args.dataroot}...")
         nusc = NuScenes(version='v1.0-mini', dataroot=args.dataroot, verbose=True)
         
         # [修改] Mini 数据集没有官方 split，直接读取所有场景
         all_scenes = [s['name'] for s in nusc.scene]
+        # 3. 这里的 train_scenes 和 val_scenes 变量其实在后面没用到，
+        # 但为了防止潜在的引用错误，我们先赋值
         train_scenes = all_scenes
         val_scenes = all_scenes
     else:
@@ -624,12 +664,18 @@ if __name__ == "__main__":
         nuscenesyaml = yaml.safe_load(stream)
 
     index_list = args.index_list
+    
+    # [新增] 如果没指定 index_list，默认跑所有场景
+    if index_list is None:
+        index_list = range(len(nusc.scene))
 
     for index in index_list:
         print("processing sequecne:", index)
         try:
             main(nusc, indice=index, nuscenesyaml=nuscenesyaml, args=args, config=config)
         except Exception as e:
+            import traceback
+            traceback.print_exc() # 打印完整报错堆栈，方便调试
             with open("./scene_error_nksr.txt", "a") as f:
                 f.write(str(index) + "\n")
             print(e)
